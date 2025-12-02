@@ -39,18 +39,21 @@ def agent_portrayal(agent):
     return {"color": color, "size": size}
 
 
-# Configuration for the model parameters accessible in the UI
+# Default model parameters
 model_params = {
     "N_people": 5,
     "N_resources": 3,
     "width": 10,
-    "height": 10
+    "height": 10,
 }
 
-# Initialize the Solara visualization page
+# Create the initial model instance
+initial_model = CommonsModel(**model_params)
+
+# Start the Solara visualization page
 page = SolaraViz(
-    CommonsModel,
-    model_params,
+    initial_model,
+    model_params=model_params,
     components=[make_space_component(agent_portrayal)],
-    name="Commons Governance Sim"
+    name="Commons Governance Sim",
 )

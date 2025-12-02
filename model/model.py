@@ -6,6 +6,8 @@ from agents.person import PersonAgent
 class CommonsModel(Model):
     def __init__(self, N_people, N_resources, width, height):
         super().__init__()
+        # Simulation step counter
+        self.steps = 0
         self.num_agents = N_people
         self.num_resources = N_resources
         # Initialize a grid where agents cannot wrap around edges
@@ -13,8 +15,8 @@ class CommonsModel(Model):
         self.running = True
 
         # Initialize and place Resource Agents
-        for i in range(self.num_resources):
-            res = ResourceAgent(f"Res-{i}", self)
+        for _ in range(self.num_resources):
+            res = ResourceAgent(self)
             # Add to the model's agent registry
             self.agents.add(res)
 
@@ -24,8 +26,8 @@ class CommonsModel(Model):
             self.grid.place_agent(res, (x, y))
 
         # Initialize and place Person Agents
-        for i in range(self.num_agents):
-            person = PersonAgent(f"Person-{i}", self)
+        for _ in range(self.num_agents):
+            person = PersonAgent(self)
             self.agents.add(person)
 
             # Assign random coordinates
@@ -43,4 +45,6 @@ class CommonsModel(Model):
 
     def step(self):
         """Advance the model by one step, shuffling agent activation order."""
+        # Increase the step counter
+        self.steps += 1
         self.agents.shuffle_do("step")
