@@ -1,59 +1,50 @@
-from mesa.visualization import SolaraViz, make_space_component
+from mesa.visualization import SolaraViz, make_space_component, make_plot_component
 from model.model import CommonsModel
 from agents.resource import ResourceAgent
 from agents.person import PersonAgent
 
 
 def agent_portrayal(agent):
-    """
-    Determines how an agent is visualized in the grid.
-    Args:
-        agent: The agent instance (ResourceAgent or PersonAgent).
-    Returns:
-        dict: A dictionary containing visualization properties like 'color' and 'size'.
-    """
-    # Default styling
     color = "grey"
     size = 10
 
-    # Visual logic for Resource Agents
     if isinstance(agent, ResourceAgent):
-        # Resources are larger points.
-        # Red indicates occupied, Green indicates free.
         size = 30
-        if agent.is_occupied:
-            color = "red"
-        else:
-            color = "green"
+        color = "red" if agent.is_occupied else "green"
 
-    # Visual logic for Person Agents
     elif isinstance(agent, PersonAgent):
-        # People are smaller points.
-        # Blue indicates they are currently using a resource, Grey indicates idle.
         size = 15
         if agent.current_resource:
             color = "blue"
-        else:
-            color = "grey"
+        elif agent.is_defecting:
+            color = "orange"
 
     return {"color": color, "size": size}
 
 
-# Default model parameters
 model_params = {
-    "N_people": 5,
-    "N_resources": 3,
+    "N_people": 10,
+    "N_resources": 5,
     "width": 10,
     "height": 10,
 }
 
-# Create the initial model instance
 initial_model = CommonsModel(**model_params)
 
-# Start the Solara visualization page
 page = SolaraViz(
     initial_model,
     model_params=model_params,
-    components=[make_space_component(agent_portrayal)],
+    components=[
+        make_space_component(agent_portrayal),
+        make_plot_component(
+            {"mean_trust": "tab:blue", "mean_autonomy": "tab:green", "mean_satisfaction": "tab:orange"},
+        ),
+        make_plot_component(
+            {"gini_coefficient": "tab:red", "resource_utilization": "tab:purple", "sustainability_index": "tab:cyan"},
+        ),
+        make_plot_component(
+            {"cooperation_rate": "tab:blue", "free_rider_ratio": "tab:red"},
+        ),
+    ],
     name="Commons Governance Sim",
 )

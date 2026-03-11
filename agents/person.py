@@ -57,8 +57,10 @@ class PersonAgent(Agent):
         self.is_defecting = False
         self.max_usage_duration = profile["max_usage_duration"]
 
+        # ── Kümülatif kullanım (Gini katsayısı hesabı için) ────────────────
+        self.cumulative_usage = 0
+
         # ── Hayal kırıklığı sayacı ─────────────────────────────────────────
-        # Arka arkaya kaç adım kaynak bulunamadı
         self.frustration_counter = 0
 
         # ── Psikolojik durum değişkenleri ──────────────────────────────────
@@ -144,7 +146,7 @@ class PersonAgent(Agent):
             # Başarılı erişim → hayal kırıklığı sıfırlanır
             self.frustration_counter = 0
 
-            print(f"Agent {self.unique_id} ({self.agent_type}) aldı: {resource.unique_id}")
+            print(f"Agent {self.unique_id} ({self.agent_type}) acquired: {resource.unique_id}")
         else:
             # Kaynak yok → hayal kırıklığı sayacı artar
             self.frustration_counter += 1
@@ -186,7 +188,7 @@ class PersonAgent(Agent):
         if not self.current_resource:
             return
 
-        print(f"Agent {self.unique_id} ({self.agent_type}) bıraktı: {self.current_resource.unique_id}")
+        print(f"Agent {self.unique_id} ({self.agent_type}) released: {self.current_resource.unique_id}")
         self.current_resource.is_occupied = False
         self.current_resource.user = None
         self.current_resource = None
@@ -224,6 +226,9 @@ class PersonAgent(Agent):
 
         # ── Güven: başarılı kullanım → pozitif deneyim ────────────────────
         self.trust = PsychologyModel.update_trust(self.trust, "positive")
+
+        # ── Kümülatif kullanım kaydı (Gini için) ─────────────────────────
+        self.cumulative_usage += self.usage_duration
 
         self.wait_time = 0
 
