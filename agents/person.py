@@ -83,6 +83,8 @@ class PersonAgent(Agent):
             random.uniform(*profile["w3_range"]),
             random.uniform(*profile["w4_range"]),
         )
+        self.last_iforest_label = 1
+        self.last_sanction_tick = -1
 
     # ─────────────────────────────────────────────────────────────────────────
     # Ana adım döngüsü
@@ -105,6 +107,13 @@ class PersonAgent(Agent):
     # ─────────────────────────────────────────────────────────────────────────
 
     def request_resource(self):
+        if not self.model.can_agent_request(self):
+            self.frustration_counter += 1
+            self.autonomy = PsychologyModel.update_autonomy(
+                self.autonomy, "forced_decision"
+            )
+            return
+
         free_resources = self.model.get_free_resources()
 
         # Kıtlık algısı: ne kadar az boş kaynak varsa o kadar yüksek
@@ -129,6 +138,7 @@ class PersonAgent(Agent):
             self.weights,
         ) * cost_factor
 
+        p_coop = self.model.adjust_cooperation_probability(self, p_coop)
         self.is_defecting = random.random() >= p_coop
 
         if free_resources:
@@ -146,7 +156,12 @@ class PersonAgent(Agent):
             # Başarılı erişim → hayal kırıklığı sıfırlanır
             self.frustration_counter = 0
 
-            print(f"Agent {self.unique_id} ({self.agent_type}) acquired: {resource.unique_id}")
+            if getattr(self.model, "verbose", False):
+                print(
+                    f"Agent {self.unique_id} ({self.agent_type}) acquired: "
+                    f"{resource.unique_id}"
+                )
+            self.model.on_resource_acquired(self)
         else:
             # Kaynak yok → hayal kırıklığı sayacı artar
             self.frustration_counter += 1
@@ -158,6 +173,7 @@ class PersonAgent(Agent):
                     self.autonomy, "forced_decision"
                 )
                 self.frustration_counter = 0
+            self.model.on_resource_unavailable(self)
 
     # ─────────────────────────────────────────────────────────────────────────
     # Kaynak kullanımı
@@ -188,10 +204,15 @@ class PersonAgent(Agent):
         if not self.current_resource:
             return
 
-        print(f"Agent {self.unique_id} ({self.agent_type}) released: {self.current_resource.unique_id}")
+        if getattr(self.model, "verbose", False):
+            print(
+                f"Agent {self.unique_id} ({self.agent_type}) released: "
+                f"{self.current_resource.unique_id}"
+            )
         self.current_resource.is_occupied = False
         self.current_resource.user = None
         self.current_resource = None
+        self.model.on_resource_released(self)
 
         # ── Komşu gözlemi ve eşitlik algısı ──────────────────────────────
         community_avg_wait = self.observe_neighbors()

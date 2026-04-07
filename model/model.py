@@ -1,5 +1,9 @@
 from mesa import Model, DataCollector
 from mesa.space import MultiGrid
+try:
+    from sklearn.ensemble import IsolationForest
+except ImportError:  # pragma: no cover
+    IsolationForest = None
 from agents.resource import ResourceAgent
 from agents.person import PersonAgent
 
@@ -20,8 +24,10 @@ class CommonsModel(Model):
         system_type: str = "baseline",
         procedural_bonus_modifier: float = 0.0,
         agent_type_distribution: dict = None,
+        random_seed: int = None,
+        verbose: bool = False,
     ):
-        super().__init__()
+        super().__init__(seed=random_seed)
         self.steps = 0
         self.num_agents = N_people
         self.num_resources = N_resources
@@ -29,10 +35,19 @@ class CommonsModel(Model):
         self.procedural_bonus_modifier = procedural_bonus_modifier
         self.grid = MultiGrid(width, height, torus=False)
         self.running = True
+        self.random_seed = random_seed
+        self.verbose = verbose
 
         # Sürdürülebilirlik indeksi için kümülatif sayaçlar
         self.total_resource_idle_ticks = 0
         self.total_resource_ticks = 0
+        self.total_conflicts = 0
+        self.total_sanctions = 0
+        self.last_detected_free_riders = 0
+        self.agent_request_blocks = {}
+        self.usage_ledger = {}
+        self.detect_every_n_steps = 10
+        self.anomaly_contamination = 0.15
 
         dist = agent_type_distribution or AGENT_TYPE_DISTRIBUTION
 
@@ -52,6 +67,13 @@ class CommonsModel(Model):
             x = self.random.randrange(self.grid.width)
             y = self.random.randrange(self.grid.height)
             self.grid.place_agent(person, (x, y))
+            self.agent_request_blocks[person.unique_id] = 0
+            self.usage_ledger[person.unique_id] = {
+                "acquired": 0,
+                "released": 0,
+                "blocked": 0,
+                "iforest_anomaly": 0,
+            }
 
         # ── DataCollector ───────────────────────────────────────────────────
         self.datacollector = DataCollector(
@@ -65,6 +87,10 @@ class CommonsModel(Model):
                 "resource_utilization": _resource_utilization,
                 "gini_coefficient":     _gini_coefficient,
                 "sustainability_index": _sustainability_index,
+                "conflict_rate":        _conflict_rate,
+                "sanction_rate":        _sanction_rate,
+                "iforest_anomaly_ratio": _iforest_anomaly_ratio,
+                "system_type":          lambda m: m.system_type,
             },
             agent_reporters={
                 "trust":       "trust",
@@ -75,6 +101,7 @@ class CommonsModel(Model):
                 "usage_duration": "usage_duration",
                 "agent_type":  "agent_type",
                 "perceived_community_fairness": "perceived_community_fairness",
+                "last_iforest_label": "last_iforest_label",
             },
             agenttype_reporters={
                 PersonAgent: {
@@ -96,6 +123,8 @@ class CommonsModel(Model):
         """Advance the model by one step, shuffling agent activation order."""
         self.steps += 1
         self.agents.shuffle_do("step")
+        if self.steps % self.detect_every_n_steps == 0:
+            self.run_iforest_detection()
 
         # Sürdürülebilirlik sayaçlarını güncelle
         for a in self.agents:
@@ -105,6 +134,78 @@ class CommonsModel(Model):
                     self.total_resource_idle_ticks += 1
 
         self.datacollector.collect(self)
+
+    def can_agent_request(self, agent):
+        if self.agent_request_blocks.get(agent.unique_id, 0) > self.steps:
+            self.usage_ledger[agent.unique_id]["blocked"] += 1
+            return False
+        return True
+
+    def adjust_cooperation_probability(self, agent, p_coop):
+        adjusted = p_coop
+        if self.system_type == "ai_advisory":
+            if agent.last_iforest_label == -1:
+                adjusted = min(1.0, adjusted + 0.10)
+        elif self.system_type == "ai_autonomous":
+            if agent.last_iforest_label == -1:
+                adjusted = min(1.0, adjusted + 0.15)
+        elif self.system_type == "blockchain_partial":
+            adjusted = min(1.0, adjusted + 0.04)
+        elif self.system_type == "blockchain_full":
+            adjusted = min(1.0, adjusted + 0.08)
+        elif self.system_type == "integrated":
+            bonus = 0.08 + (0.08 if agent.last_iforest_label == -1 else 0.0)
+            adjusted = min(1.0, adjusted + bonus)
+        return max(0.0, adjusted)
+
+    def on_resource_acquired(self, agent):
+        self.usage_ledger[agent.unique_id]["acquired"] += 1
+
+    def on_resource_released(self, agent):
+        self.usage_ledger[agent.unique_id]["released"] += 1
+
+    def on_resource_unavailable(self, _agent):
+        self.total_conflicts += 1
+
+    def run_iforest_detection(self):
+        persons = _get_person_agents(self)
+        if len(persons) < 4:
+            return
+        if IsolationForest is None:
+            for agent in persons:
+                agent.last_iforest_label = 1
+            self.last_detected_free_riders = 0
+            return
+        features = []
+        for a in persons:
+            features.append(
+                [
+                    a.cumulative_usage,
+                    a.wait_time,
+                    1 if a.is_defecting else 0,
+                    a.autonomy,
+                    a.satisfaction,
+                    self.usage_ledger[a.unique_id]["blocked"],
+                ]
+            )
+        detector = IsolationForest(
+            contamination=self.anomaly_contamination,
+            random_state=self.random_seed if self.random_seed is not None else 42,
+        )
+        labels = detector.fit_predict(features)
+        anomaly_count = 0
+        for agent, label in zip(persons, labels):
+            agent.last_iforest_label = label
+            if label == -1:
+                anomaly_count += 1
+                self.usage_ledger[agent.unique_id]["iforest_anomaly"] += 1
+                if self.system_type in ("ai_autonomous", "integrated"):
+                    block_until = self.steps + 3
+                    self.agent_request_blocks[agent.unique_id] = max(
+                        self.agent_request_blocks[agent.unique_id], block_until
+                    )
+                    self.total_sanctions += 1
+        self.last_detected_free_riders = anomaly_count
 
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -190,6 +291,25 @@ def _sustainability_index(model):
     if model.total_resource_ticks == 0:
         return 1.0
     return model.total_resource_idle_ticks / model.total_resource_ticks
+
+
+def _conflict_rate(model):
+    if model.steps == 0:
+        return 0.0
+    return model.total_conflicts / model.steps
+
+
+def _sanction_rate(model):
+    if model.steps == 0:
+        return 0.0
+    return model.total_sanctions / model.steps
+
+
+def _iforest_anomaly_ratio(model):
+    persons = _get_person_agents(model)
+    if not persons:
+        return 0.0
+    return model.last_detected_free_riders / len(persons)
 
 
 # ═════════════════════════════════════════════════════════════════════════════

@@ -45,6 +45,9 @@ page = SolaraViz(
         make_plot_component(
             {"cooperation_rate": "tab:blue", "free_rider_ratio": "tab:red"},
         ),
+        make_plot_component(
+            {"iforest_anomaly_ratio": "tab:purple", "sanction_rate": "tab:brown", "conflict_rate": "tab:gray"},
+        ),
     ],
     name="Commons Governance Sim",
 )
