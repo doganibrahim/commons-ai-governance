@@ -1,6 +1,7 @@
 """Batch experiment runner: 104 scenarios x 25 repeats x 300 steps."""
 
 import os
+import pandas as pd
 from model.model import CommonsModel
 
 N_STEPS = 300
@@ -10,6 +11,7 @@ GRID_HEIGHT = 15
 OUTPUT_DIR = "output"
 MODEL_OUT = os.path.join(OUTPUT_DIR, "model_metrics_104x25.csv")
 AGENT_OUT = os.path.join(OUTPUT_DIR, "agent_metrics_104x25.csv")
+SCENARIO_OUT = os.path.join(OUTPUT_DIR, "scenario_matrix_104.csv")
 
 
 def build_system_configs():
@@ -67,6 +69,40 @@ def build_scenarios():
     return scenarios
 
 
+def scenarios_to_dataframe():
+    rows = []
+    for s in build_scenarios():
+        dist = s["agent_type_distribution"]
+        rows.append(
+            {
+                "scenario_id": s["scenario_id"],
+                "config_name": s["config_name"],
+                "system_type": s["system_type"],
+                "procedural_bonus_modifier": s["procedural_bonus_modifier"],
+                "context_id": s["context_id"],
+                "N_people": s["N_people"],
+                "N_resources": s["N_resources"],
+                "cohesion": s["cohesion"],
+                "base_trust_shift": s["base_trust_shift"],
+                "agent_type_distribution": str(dist),
+                "agent_ideal": dist["ideal"],
+                "agent_standard": dist["standard"],
+                "agent_toxic": dist["toxic"],
+            }
+        )
+    return pd.DataFrame(rows)
+
+
+def validate_scenario_matrix(df):
+    assert len(df) == 104, f"Expected 104 scenarios, found {len(df)}"
+    assert df["scenario_id"].is_unique, "scenario_id must be unique"
+    assert set(df["system_type"]).issubset(
+        {"baseline", "ai_advisory", "ai_autonomous", "blockchain_partial", "blockchain_full", "integrated"}
+    ), "Unexpected system_type values"
+    sums = (df["agent_ideal"] + df["agent_standard"] + df["agent_toxic"]).round(6)
+    assert (sums == 1.0).all(), "Agent type distribution must sum to 1.0"
+
+
 def run_single_scenario(scenario, repeat_idx, n_steps):
     seed = scenario["scenario_id"] * 1000 + repeat_idx
     model = CommonsModel(
@@ -103,6 +139,11 @@ def append_csv(df, path):
 
 def run_experiments(max_runs=None):
     os.makedirs(OUTPUT_DIR, exist_ok=True)
+    sdf = scenarios_to_dataframe()
+    validate_scenario_matrix(sdf)
+    sdf.to_csv(SCENARIO_OUT, index=False)
+    print(f"Scenario matrix exported: {SCENARIO_OUT} ({len(sdf)} rows)")
+
     for p in (MODEL_OUT, AGENT_OUT):
         if os.path.exists(p):
             os.remove(p)
