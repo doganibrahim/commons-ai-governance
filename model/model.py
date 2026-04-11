@@ -38,7 +38,7 @@ class CommonsModel(Model):
         self.random_seed = random_seed
         self.verbose = verbose
 
-        # Sürdürülebilirlik indeksi için kümülatif sayaçlar
+        # for sustainability index: cumulative counters
         self.total_resource_idle_ticks = 0
         self.total_resource_ticks = 0
         self.total_conflicts = 0
@@ -93,15 +93,17 @@ class CommonsModel(Model):
                 "system_type":          lambda m: m.system_type,
             },
             agent_reporters={
-                "trust":       "trust",
-                "autonomy":    "autonomy",
-                "satisfaction": "satisfaction",
-                "is_defecting": "is_defecting",
-                "wait_time":   "wait_time",
-                "usage_duration": "usage_duration",
-                "agent_type":  "agent_type",
-                "perceived_community_fairness": "perceived_community_fairness",
-                "last_iforest_label": "last_iforest_label",
+                # for agent types that do not carry ResourceAgent fields
+                # to avoid errors in DataCollector.
+                "trust": lambda a: getattr(a, "trust", None),
+                "autonomy": lambda a: getattr(a, "autonomy", None),
+                "satisfaction": lambda a: getattr(a, "satisfaction", None),
+                "is_defecting": lambda a: getattr(a, "is_defecting", None),
+                "wait_time": lambda a: getattr(a, "wait_time", None),
+                "usage_duration": lambda a: getattr(a, "usage_duration", None),
+                "agent_type": lambda a: getattr(a, "agent_type", None),
+                "perceived_community_fairness": lambda a: getattr(a, "perceived_community_fairness", None),
+                "last_iforest_label": lambda a: getattr(a, "last_iforest_label", None),
             },
             agenttype_reporters={
                 PersonAgent: {
@@ -126,7 +128,7 @@ class CommonsModel(Model):
         if self.steps % self.detect_every_n_steps == 0:
             self.run_iforest_detection()
 
-        # Sürdürülebilirlik sayaçlarını güncelle
+        # update sustainability counters
         for a in self.agents:
             if isinstance(a, ResourceAgent):
                 self.total_resource_ticks += 1
@@ -209,7 +211,7 @@ class CommonsModel(Model):
 
 
 # ═════════════════════════════════════════════════════════════════════════════
-# Yardımcı fonksiyonlar (DataCollector model_reporters için)
+# helper functions (for DataCollector model_reporters)
 # ═════════════════════════════════════════════════════════════════════════════
 
 def _get_person_agents(model):
@@ -270,8 +272,8 @@ def _resource_utilization(model):
 
 def _gini_coefficient(model):
     """
-    Kümülatif kaynak kullanım sürelerinden Gini katsayısı hesaplar.
-    0 = tam eşitlik, 1 = tam eşitsizlik.
+    Calculates the Gini coefficient from cumulative resource usage durations.
+    0 = perfect equality, 1 = perfect inequality.
     """
     persons = _get_person_agents(model)
     usages = sorted(a.cumulative_usage for a in persons)
@@ -285,8 +287,8 @@ def _gini_coefficient(model):
 
 def _sustainability_index(model):
     """
-    Kaynakların boş kalma oranı (kümülatif).
-    Yüksek = kaynaklar tükenmeden paylaşılıyor → sürdürülebilir.
+    The ratio of resources being idle (cumulative).
+    High = resources are shared without depletion → sustainable.
     """
     if model.total_resource_ticks == 0:
         return 1.0
@@ -313,7 +315,7 @@ def _iforest_anomaly_ratio(model):
 
 
 # ═════════════════════════════════════════════════════════════════════════════
-# Ajan tipi dağılımı oluşturucu
+# agent type distribution creator
 # ═════════════════════════════════════════════════════════════════════════════
 
 def _build_agent_type_list(n: int, dist: dict, rng) -> list:

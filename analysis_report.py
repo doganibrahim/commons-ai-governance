@@ -65,19 +65,19 @@ def main():
         results[m] = run_anova(fdf, m)
 
     lines = []
-    lines.append("# Akademik Rapor Ozeti")
+    lines.append("# Academic Report Summary")
     lines.append("")
-    lines.append("## Veri Durumu")
-    lines.append(f"- Scenario matrix satir sayisi: {len(scenarios)}")
-    lines.append(f"- Model metric satir sayisi: {len(df)}")
-    lines.append(f"- Final tick run sayisi: {len(fdf)}")
+    lines.append("## Data Status")
+    lines.append(f"- number of rows in scenario matrix: {len(scenarios)}")
+    lines.append(f"- number of rows in model metrics: {len(df)}")
+    lines.append(f"- number of final tick runs: {len(fdf)}")
     lines.append("")
-    lines.append("## Hipotez Bazli Kisa Yorum")
-    lines.append("- H1: Sistem tipi adalet metriklerini (Gini) anlamli bicimde etkiler.")
-    lines.append("- H2: Sistem tipi psikolojik guven seviyelerini anlamli bicimde etkiler.")
-    lines.append("- H3: Sistem tipi kaynak verimliligi ve free-rider oranlarini anlamli bicimde etkiler.")
+    lines.append("## Hypothesis-Based Short Summary")
+    lines.append("- H1: System type fairness metrics (Gini) significantly affect.")
+    lines.append("- H2: System type psychological trust levels significantly affect.")
+    lines.append("- H3: System type resource utilization and free-rider ratio significantly affect.")
     lines.append("")
-    lines.append("## ANOVA Ozeti (system_type etkisi)")
+    lines.append("## ANOVA Summary (system_type effect)")
 
     summary_rows = []
     for metric in metrics:
@@ -88,20 +88,20 @@ def main():
             summary_rows.append((metric, pval, eta))
             lines.append(f"- {metric}: p={pval:.4g}, eta^2={eta:.4f}")
         else:
-            lines.append(f"- {metric}: C(system_type) satiri bulunamadi")
+            lines.append(f"- {metric}: C(system_type) row not found")
 
     lines.append("")
-    lines.append("## En Kritik 3 Bulgu")
+    lines.append("## Most Critical 3 Findings")
     summary_rows.sort(key=lambda x: x[2], reverse=True)
     for metric, pval, eta in summary_rows[:3]:
-        significance = "anlamli" if pval < 0.05 else "anlamli degil"
+        significance = "significant" if pval < 0.05 else "not significant"
         lines.append(
             f"- {metric}: system_type etkisi {significance}; etki buyuklugu eta^2={eta:.4f}."
         )
 
     lines.append("")
-    lines.append("## Tukey HSD Notlari")
-    lines.append("- Asagidaki tablolar pairwise system_type karsilastirmalarini verir.")
+    lines.append("## Tukey HSD Notes")
+    lines.append("- The following tables show pairwise system_type comparisons.")
     for metric in metrics:
         _, tukey = results[metric]
         lines.append("")
@@ -111,10 +111,10 @@ def main():
         lines.append("```")
 
     lines.append("")
-    lines.append("## Gecerlilik / Sinirlilik Notlari")
-    lines.append("- Bu ozet final-tick uzerinden hesaplanmistir; zaman serisi etkileri ayrica incelenmelidir.")
-    lines.append("- Ciktilarin guvenilirligi tekrar sayisi ve senaryo kapsamina baglidir.")
-    lines.append("- Parametre kalibrasyonu (ozellikle procedural bonus, sanction windows) ic gecerlilik icin ayrica raporlanmalidir.")
+    lines.append("## Validity / Limitations Notes")
+    lines.append("- This summary is calculated based on final-tick; time series effects should be additionally analyzed.")
+    lines.append("- The reliability of the results is related to the number of repetitions and scenario coverage.")
+    lines.append("- Parameter calibration (especially procedural bonus, sanction windows) should be reported additionally for validity.")
 
     os.makedirs("output", exist_ok=True)
     with open(REPORT_PATH, "w", encoding="utf-8") as f:

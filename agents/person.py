@@ -3,7 +3,7 @@ import random
 from modules.psychology import PsychologyModel
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Ajan tiplerine göre başlangıç parametreleri
+# agent types and their profiles
 # ─────────────────────────────────────────────────────────────────────────────
 AGENT_TYPE_PROFILES = {
     "ideal": {
@@ -11,7 +11,7 @@ AGENT_TYPE_PROFILES = {
         "autonomy":           1.0,
         "satisfaction":       0.7,
         "max_usage_duration": 5,
-        # w1=Trust, w2=Satisfaction, w3=Autonomy, w4=Scarcity
+        # w1=trust, w2=satisfaction, w3=autonomy, w4=scarcity
         "w1_range": (0.40, 0.50),
         "w2_range": (0.30, 0.45),
         "w3_range": (0.15, 0.25),
@@ -31,15 +31,15 @@ AGENT_TYPE_PROFILES = {
         "base_trust":         30,
         "autonomy":           0.4,
         "satisfaction":       0.3,
-        "max_usage_duration": 10,   # doğal olarak kaynağı daha uzun tutar
+        "max_usage_duration": 10,   # naturally, the resource is used for a longer time
         "w1_range": (0.15, 0.30),
         "w2_range": (0.20, 0.35),
         "w3_range": (0.10, 0.20),
-        "w4_range": (0.25, 0.35),   # kıtlığa çok duyarlı → rekabetçi
+        "w4_range": (0.25, 0.35),   # very sensitive to scarcity → competitive
     },
 }
 
-# Kaç adım arka arkaya kaynak bulunamazsa "hayal kırıklığı" tetiklenir
+# how many steps in a row a resource is not available, the "frustration" is triggered
 FRUSTRATION_THRESHOLD = 3
 
 
@@ -50,21 +50,21 @@ class PersonAgent(Agent):
         self.agent_type = agent_type
         profile = AGENT_TYPE_PROFILES.get(agent_type, AGENT_TYPE_PROFILES["standard"])
 
-        # ── Kaynak kullanım durumu ──────────────────────────────────────────
+        # ── resource usage status ────────────────────────────────────────────
         self.current_resource = None
         self.usage_duration = 0
         self.wait_time = 0
         self.is_defecting = False
         self.max_usage_duration = profile["max_usage_duration"]
 
-        # ── Kümülatif kullanım (Gini katsayısı hesabı için) ────────────────
+        # ── cumulative usage (for Gini coefficient calculation) ──────────────
         self.cumulative_usage = 0
 
-        # ── Hayal kırıklığı sayacı ─────────────────────────────────────────
+        # ── frustration counter ──────────────────────────────────────────────
         self.frustration_counter = 0
 
-        # ── Psikolojik durum değişkenleri ──────────────────────────────────
-        # Güven: model'in sistem tipine göre AI penaltısı uygulanır
+        # ── psychological variables ───────────────────────────────────────────
+        # trust: AI penalty applied based on the model's system type
         is_ai = model.system_type in ("ai_advisory", "ai_autonomous", "integrated")
         self.trust = PsychologyModel.calculate_initial_trust(
             base_trust=profile["base_trust"],
@@ -73,10 +73,10 @@ class PersonAgent(Agent):
         self.autonomy = profile["autonomy"]
         self.satisfaction = profile["satisfaction"]
 
-        # Komşu gözleminden hesaplanan topluluk adalet algısı (0-1)
+        # perceived community fairness from neighbor observation (0-1)
         self.perceived_community_fairness = 0.5
 
-        # ── İşbirliği karar ağırlıkları (tipe özel aralıklardan rastgele) ──
+        # ── cooperation decision weights (randomly from type-specific ranges) ──
         self.weights = (
             random.uniform(*profile["w1_range"]),
             random.uniform(*profile["w2_range"]),
@@ -87,14 +87,14 @@ class PersonAgent(Agent):
         self.last_sanction_tick = -1
 
     # ─────────────────────────────────────────────────────────────────────────
-    # Ana adım döngüsü
+    # main decision loop
     # ─────────────────────────────────────────────────────────────────────────
 
     def step(self):
         """
-        Ana karar döngüsü:
-        - Kaynak tutmuyorsa: bekle, algıla, karar ver, talep et.
-        - Kaynak tutuyorsa: kullan, süresi dolunca bırak.
+        Main decision loop:
+        - if not holding a resource: wait, observe, decide, request.
+        - if holding a resource: use, release when duration is over.
         """
         if self.current_resource is None:
             self.wait_time += 1
@@ -103,7 +103,7 @@ class PersonAgent(Agent):
             self.use_resource()
 
     # ─────────────────────────────────────────────────────────────────────────
-    # Kaynak talep etme
+    # request a resource
     # ─────────────────────────────────────────────────────────────────────────
 
     def request_resource(self):
@@ -116,20 +116,20 @@ class PersonAgent(Agent):
 
         free_resources = self.model.get_free_resources()
 
-        # Kıtlık algısı: ne kadar az boş kaynak varsa o kadar yüksek
+        # scarcity perception: the less free resources, the higher
         total_resources = getattr(self.model, "num_resources", 10)
         scarcity = 1.0 - (len(free_resources) / max(1, total_resources))
 
-        # İşbirliğinin öznel maliyeti: yüksek özerklik maliyeti düşürür
+        # subjective cost of cooperation: high autonomy cost reduces it
         base_cost = 1.0
         effective_cost = PsychologyModel.calculate_cooperation_cost(
             base_cost=base_cost,
             autonomy_felt=self.autonomy,
         )
-        # Efektif maliyet düşükse işbirliği daha kolay → eşiği yumuşat
+        # if the effective cost is low, cooperation is easier → threshold is softened
         cost_factor = 1.0 - min(0.3, (base_cost - effective_cost))
 
-        # İşbirliği olasılığı (maliyet faktörüyle ölçeklendirilmiş)
+        # cooperation probability (scaled by cost factor)
         p_coop = PsychologyModel.calculate_cooperation_probability(
             self.trust,
             self.satisfaction,
@@ -142,18 +142,18 @@ class PersonAgent(Agent):
         self.is_defecting = random.random() >= p_coop
 
         if free_resources:
-            # Boş kaynak bulundu → anlamlı seçim hakkı kullanıldı
+            # free resource found → meaningful choice made
             resource = random.choice(free_resources)
             resource.is_occupied = True
             resource.user = self
             self.current_resource = resource
             self.usage_duration = 0
 
-            # Özerklik: anlamlı bir seçim yapıldı
+            # autonomy: a meaningful choice was made
             self.autonomy = PsychologyModel.update_autonomy(
                 self.autonomy, "meaningful_choice"
             )
-            # Başarılı erişim → hayal kırıklığı sıfırlanır
+            # successful access → frustration is reset
             self.frustration_counter = 0
 
             if getattr(self.model, "verbose", False):
@@ -163,11 +163,11 @@ class PersonAgent(Agent):
                 )
             self.model.on_resource_acquired(self)
         else:
-            # Kaynak yok → hayal kırıklığı sayacı artar
+            # no resource → frustration counter increases
             self.frustration_counter += 1
 
             if self.frustration_counter >= FRUSTRATION_THRESHOLD:
-                # Sistem kaynak sağlayamıyor: güven ve özerklik düşer
+                # system cannot provide resource: trust and autonomy decrease
                 self.trust = PsychologyModel.update_trust(self.trust, "negative")
                 self.autonomy = PsychologyModel.update_autonomy(
                     self.autonomy, "forced_decision"
@@ -176,12 +176,12 @@ class PersonAgent(Agent):
             self.model.on_resource_unavailable(self)
 
     # ─────────────────────────────────────────────────────────────────────────
-    # Kaynak kullanımı
+    # resource usage
     # ─────────────────────────────────────────────────────────────────────────
 
     def use_resource(self):
         """
-        Kullanım süresini yönetir. Defector ajanlar kaynağı daha uzun tutar.
+        Manages the usage duration. Defectors hold the resource for a longer time.
         """
         self.usage_duration += 1
 
@@ -193,13 +193,13 @@ class PersonAgent(Agent):
             self.release_resource()
 
     # ─────────────────────────────────────────────────────────────────────────
-    # Kaynağı bırakma + geri bildirim döngüsü
+    # release the resource + feedback loop
     # ─────────────────────────────────────────────────────────────────────────
 
     def release_resource(self):
         """
-        Kaynağı serbest bırakır ve psikolojik güncelleme döngüsünü tetikler:
-        güven, memnuniyet (DEA + eşitlik bonusu + prosedürel adalet) ve özerklik.
+        Releases the resource and triggers the psychological update loop:
+        trust, satisfaction (DEA + equity bonus + procedural fairness) and autonomy.
         """
         if not self.current_resource:
             return
@@ -214,12 +214,12 @@ class PersonAgent(Agent):
         self.current_resource = None
         self.model.on_resource_released(self)
 
-        # ── Komşu gözlemi ve eşitlik algısı ──────────────────────────────
+        # ── neighbor observation and equity perception ───────────────────────
         community_avg_wait = self.observe_neighbors()
 
-        # Eşitlik bonusu: kendi bekleme süresini topluluk ortalamasıyla kıyasla.
-        # Ortalamanın altındaysak adaletli hissediyoruz → pozitif bonus
-        # Ortalamanın üstündeyse haksızlık algısı → negatif bonus
+        # equity bonus: compare own wait time to community average.
+        # if below average, we feel fair → positive bonus
+        # if above average, we feel unfair → negative bonus
         if community_avg_wait > 0:
             equity_ratio = self.wait_time / community_avg_wait
             # equity_ratio < 1 → kısa bekledik (iyi), > 1 → uzun bekledik (kötü)
@@ -227,10 +227,10 @@ class PersonAgent(Agent):
         else:
             equity_bonus = 0.0
 
-        # Prosedürel adalet: modelden gelen sistem bonusu + eşitlik gözlemi
+        # procedural fairness: system bonus from the model + equity observation
         procedural_bonus = equity_bonus + self.model.procedural_bonus_modifier
 
-        # ── DEA-benzeri memnuniyet hesabı ─────────────────────────────────
+        # ── similar to DEA satisfaction calculation ─────────────────────────
         inputs = self.wait_time + 1.0
         outputs = self.usage_duration
 
@@ -242,28 +242,28 @@ class PersonAgent(Agent):
             procedural_bonus=procedural_bonus,
         )
 
-        # Ağırlıklı hareketli ortalama ile yumuşatılmış güncelleme
+        # weighted moving average update
         self.satisfaction = (self.satisfaction * 0.7) + (new_sat * 0.3)
 
-        # ── Güven: başarılı kullanım → pozitif deneyim ────────────────────
+        # ── trust: successful use → positive experience ──────────────────────
         self.trust = PsychologyModel.update_trust(self.trust, "positive")
 
-        # ── Kümülatif kullanım kaydı (Gini için) ─────────────────────────
+        # ── cumulative usage record (for Gini coefficient) ───────────────────
         self.cumulative_usage += self.usage_duration
 
         self.wait_time = 0
 
     # ─────────────────────────────────────────────────────────────────────────
-    # Komşu gözlemi (Eşitlik Teorisi için)
+    # neighbor observation (Equity Theory)
     # ─────────────────────────────────────────────────────────────────────────
 
     def observe_neighbors(self) -> float:
         """
-        Grid'deki komşu PersonAgent'larının wait_time ortalamasını hesaplar.
-        Sonucu perceived_community_fairness olarak saklar ve döndürür.
+        Calculates the average wait time of the neighboring PersonAgent's in the grid.
+        Stores the result as perceived_community_fairness and returns it.
 
         Returns:
-            float: Komşuların ortalama wait_time değeri (komşu yoksa 0).
+            float: the average wait time of the neighboring PersonAgent's (0 if no neighbor).
         """
         if not hasattr(self.model, "grid") or self.pos is None:
             return 0.0
@@ -283,8 +283,8 @@ class PersonAgent(Agent):
 
         avg_wait = sum(neighbor_wait_times) / len(neighbor_wait_times)
 
-        # 0-1 normalizasyonu: uzun bekleme = düşük adalet algısı
-        # 10 adım beklemeyi "kötü" için referans kabul ediyoruz
+        # 0-1 normalization: long wait = low fairness perception
+        # 10 steps of wait is considered "bad"
         self.perceived_community_fairness = max(0.0, 1.0 - (avg_wait / 10.0))
 
         return avg_wait
